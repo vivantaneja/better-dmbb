@@ -17,9 +17,9 @@ export const metadata: Metadata = {
   title: "Dublin Men's Basketball Board",
   description: "Official Dublin Men's Basketball Board fixtures, results, competitions and updates.",
   icons: {
-    icon: "/dmbb-logo.png",
+    icon: "/favicon.png",
     apple: "/dmbb-logo.png",
-    shortcut: "/dmbb-logo.png",
+    shortcut: "/favicon.png",
   },
 };
 

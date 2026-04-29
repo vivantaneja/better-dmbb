@@ -1,9 +1,12 @@
+import Link from "next/link";
 import { CompetitionCard, SectionTitle } from "@/components/site-shell";
 import { getOfficialDmbbData } from "@/lib/data/official-dmbb";
 
 export const metadata = {
   title: "Competitions | Dublin Men's Basketball Board",
 };
+
+type TabKey = "leagues-seasons" | "cups" | "shields";
 
 type CompetitionGroup = "division" | "over" | "under" | "other";
 
@@ -96,20 +99,38 @@ function leagueSort(aName: string, bName: string): number {
   );
 }
 
-export default async function CompetitionsPage() {
+export default async function CompetitionsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ tab?: string }>;
+}) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const data = await getOfficialDmbbData();
   const sortedCompetitions = [...data.competitions].sort((a, b) => leagueSort(a.name, b.name));
   const isCup = (name: string) => /\bcup\b/i.test(name);
   const isShield = (name: string) => /\bshield\b/i.test(name);
+  const isTop4 = (name: string) => /top\s*4|final\s*4/i.test(name);
+
+  const activeTab = ((): TabKey => {
+    const tab = resolvedSearchParams?.tab;
+    if (tab === "cups" || tab === "shields" || tab === "leagues-seasons") return tab;
+    return "leagues-seasons";
+  })();
 
   const grouped = {
-    leagues: sortedCompetitions.filter((competition) => !isCup(competition.name) && !isShield(competition.name)),
-    cupsAndShields: sortedCompetitions.filter(
-      (competition) => isCup(competition.name) || isShield(competition.name),
+    leaguesAndSeasons: sortedCompetitions.filter(
+      (competition) =>
+        isTop4(competition.name) || (!isCup(competition.name) && !isShield(competition.name)),
+    ),
+    cups: sortedCompetitions.filter(
+      (competition) => !isTop4(competition.name) && isCup(competition.name) && !isShield(competition.name),
+    ),
+    shields: sortedCompetitions.filter(
+      (competition) => !isTop4(competition.name) && isShield(competition.name),
     ),
   };
-  const leagueBuckets = grouped.leagues.reduce<
-    Array<{ label: string; competitions: (typeof grouped.leagues)[number][]; sortKey: number }>
+  const leagueBuckets = grouped.leaguesAndSeasons.reduce<
+    Array<{ label: string; competitions: (typeof grouped.leaguesAndSeasons)[number][]; sortKey: number }>
   >((acc, competition) => {
     const meta = classifyLeagueName(competition.name);
     const existing = acc.find((bucket) => bucket.label === meta.bucketLabel);
@@ -139,11 +160,35 @@ export default async function CompetitionsPage() {
         <p className="text-xs text-brand-muted">
           Last synced: {new Date(data.lastSyncedAt).toLocaleString()}
         </p>
+        <nav className="flex flex-wrap gap-2">
+          {([
+            { key: "leagues-seasons", label: `Leagues/Seasons (${grouped.leaguesAndSeasons.length})` },
+            { key: "cups", label: `Cups (${grouped.cups.length})` },
+            { key: "shields", label: `Shields (${grouped.shields.length})` },
+          ] as const).map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <Link
+                key={tab.key}
+                href={`/competitions?tab=${tab.key}`}
+                aria-current={isActive ? "page" : undefined}
+                style={isActive ? { color: "#ffffff" } : undefined}
+                className={`rounded-full border px-4 py-2 text-xs font-black uppercase tracking-wide transition-colors ${
+                  isActive
+                    ? "border-brand-navy bg-brand-navy text-white"
+                    : "border-border bg-white text-brand-navy hover:border-brand-cyan"
+                }`}
+              >
+                {tab.label}
+              </Link>
+            );
+          })}
+        </nav>
 
-        {grouped.leagues.length > 0 && (
+        {activeTab === "leagues-seasons" && grouped.leaguesAndSeasons.length > 0 && (
           <div className="space-y-3">
             <h3 className="text-xl font-black uppercase text-brand-navy">
-              Leagues ({grouped.leagues.length})
+              Leagues & Seasons ({grouped.leaguesAndSeasons.length})
             </h3>
             <div className="space-y-5">
               {leagueBuckets.map((bucket) => (
@@ -162,13 +207,26 @@ export default async function CompetitionsPage() {
           </div>
         )}
 
-        {grouped.cupsAndShields.length > 0 && (
+        {activeTab === "cups" && grouped.cups.length > 0 && (
           <div className="space-y-3">
             <h3 className="text-xl font-black uppercase text-brand-navy">
-              Cups & Shields ({grouped.cupsAndShields.length})
+              Cups ({grouped.cups.length})
             </h3>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {grouped.cupsAndShields.map((competition) => (
+              {grouped.cups.map((competition) => (
+                <CompetitionCard key={competition.id} competition={competition} compact />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "shields" && grouped.shields.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-xl font-black uppercase text-brand-navy">
+              Shields ({grouped.shields.length})
+            </h3>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {grouped.shields.map((competition) => (
                 <CompetitionCard key={competition.id} competition={competition} compact />
               ))}
             </div>

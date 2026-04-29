@@ -84,7 +84,7 @@ function buildBracketRounds(matches: Fixture[], competitionName: string) {
     rounds.unshift({ label: "Quarter-Finals", matches: quarterFinals });
   }
   if (prelims.length > 0) {
-    rounds.unshift({ label: "Preliminary", matches: prelims });
+    rounds.unshift({ label: "Round of 16", matches: prelims });
   }
 
   return rounds;
@@ -110,10 +110,18 @@ export default async function CompetitionDetailPage({ params }: CompetitionPageP
   return (
     <section className="py-14">
       <div className="dmbb-container space-y-10">
-        <Link href="/competitions" className="text-xs font-bold uppercase tracking-wider text-brand-cyan">
-          Back To Competitions
-        </Link>
-        <SectionTitle eyebrow={competition.tier} title={competition.name} />
+        <div className="space-y-4">
+          <Link
+            href="/competitions"
+            className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-cyan"
+          >
+            <span aria-hidden="true" className="text-sm leading-none">
+              ←
+            </span>
+            Back To Competitions
+          </Link>
+          <SectionTitle eyebrow={competition.tier} title={competition.name} />
+        </div>
         <p className="text-brand-muted">{competition.description}</p>
 
         {isTournament ? (
