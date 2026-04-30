@@ -282,6 +282,47 @@ function mergeCompetitionTierFromName(name: string): string {
   return "Senior";
 }
 
+function inferWonLostFromRow(
+  $: cheerio.CheerioAPI,
+  cells: cheerio.Cheerio<Element>,
+  played: number,
+): { won: number; lost: number } {
+  const parseCellInt = (index: number): number | null => {
+    const value = Number.parseInt(normalizeWhitespace(cells.eq(index).text()), 10);
+    return Number.isNaN(value) ? null : value;
+  };
+
+  // Most DMBB league rows place W/L immediately after P.
+  const wonCandidate = parseCellInt(3);
+  const lostCandidate = parseCellInt(4);
+  if (
+    wonCandidate != null &&
+    lostCandidate != null &&
+    wonCandidate >= 0 &&
+    lostCandidate >= 0 &&
+    wonCandidate + lostCandidate <= played
+  ) {
+    return { won: wonCandidate, lost: lostCandidate };
+  }
+
+  // Fallback: use numeric cells and prefer pairs that sum to played.
+  const numericValues = cells
+    .map((_, cell) => Number.parseInt(normalizeWhitespace($(cell).text()), 10))
+    .get()
+    .filter((value) => !Number.isNaN(value) && value >= 0);
+
+  for (let i = 0; i < numericValues.length; i += 1) {
+    for (let j = 0; j < numericValues.length; j += 1) {
+      if (i === j) continue;
+      const won = numericValues[i];
+      const lost = numericValues[j];
+      if (won + lost === played) return { won, lost };
+    }
+  }
+
+  return { won: 0, lost: 0 };
+}
+
 function parseCompetitionsFromClubPage($: cheerio.CheerioAPI): {
   competitions: Competition[];
   teamsByCompId: Map<string, Set<string>>;
@@ -338,6 +379,7 @@ function parseCompetitionsFromClubPage($: cheerio.CheerioAPI): {
 
       const team = normalizeWhitespace(teamLink.text());
       const played = Number.parseInt(normalizeWhitespace($(cells.get(2)).text()), 10);
+      const { won, lost } = inferWonLostFromRow($, cells, played);
       const points = Number.parseInt(
         normalizeWhitespace($(cells.get(cells.length - 1)).text()),
         10,
@@ -349,8 +391,8 @@ function parseCompetitionsFromClubPage($: cheerio.CheerioAPI): {
         competitionId,
         team,
         played,
-        won: 0,
-        lost: 0,
+        won,
+        lost,
         points,
       });
     });

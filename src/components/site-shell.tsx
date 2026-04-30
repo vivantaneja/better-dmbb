@@ -16,10 +16,18 @@ export function SiteHeader() {
 
   return (
     <header className="bg-brand-navy text-white">
-      <div className="dmbb-container flex items-center justify-between py-5">
-        <Link href="/" className="flex items-center gap-3">
-          <Image src="/dmbb-logo.png" width={54} height={54} alt="Dublin Men's Basketball Board logo" className="rounded-full" />
-          <div className="text-xs uppercase tracking-[0.2em] text-brand-cyan">Dublin Men&apos;s Basketball Board</div>
+      <div className="dmbb-container flex items-center justify-between gap-3 py-5">
+        <Link href="/" className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+          <Image
+            src="/dmbb-logo.png"
+            width={54}
+            height={54}
+            alt="Dublin Men's Basketball Board logo"
+            className="h-11 w-11 rounded-full sm:h-[54px] sm:w-[54px]"
+          />
+          <div className="truncate text-[11px] uppercase tracking-[0.16em] text-brand-cyan sm:text-xs sm:tracking-[0.2em]">
+            Dublin Men&apos;s Basketball Board
+          </div>
         </Link>
         <nav className="hidden md:flex items-center gap-8 text-sm uppercase tracking-wider">
           {nav.map((item) => (
@@ -28,7 +36,10 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <Link href="/fixtures-results" className="rounded-xl bg-brand-cyan px-4 py-2 text-xs font-semibold uppercase tracking-wide text-brand-navy">
+        <Link
+          href="/fixtures-results"
+          className="shrink-0 rounded-xl bg-brand-cyan px-3 py-2 text-xs font-semibold uppercase tracking-wide text-brand-navy sm:px-4"
+        >
           This Week
         </Link>
       </div>
@@ -82,11 +93,11 @@ export function ResultCard({ result }: { result: Fixture }) {
   return (
     <article className="dmbb-card p-4">
       <p className="text-xs font-bold uppercase tracking-wider text-brand-muted">{result.division}</p>
-      <div className="mt-2 flex items-center justify-between gap-4">
-        <h3 className="text-base font-semibold text-brand-navy">
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
+        <h3 className="min-w-0 text-base font-semibold text-brand-navy">
           {result.homeTeam} <span className="text-brand-muted">vs</span> {result.awayTeam}
         </h3>
-        <p className="text-xl font-black text-brand-navy">
+        <p className="shrink-0 whitespace-nowrap text-right text-xl font-black leading-none text-brand-navy">
           {result.homeScore ?? "-"} : {result.awayScore ?? "-"}
         </p>
       </div>
