@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import type { Element } from "domhandler";
+import { revalidateTag, unstable_cache } from "next/cache";
 import {
   type Competition,
   type DmbbPayload,
@@ -282,45 +283,19 @@ function mergeCompetitionTierFromName(name: string): string {
   return "Senior";
 }
 
-function inferWonLostFromRow(
-  $: cheerio.CheerioAPI,
-  cells: cheerio.Cheerio<Element>,
-  played: number,
-): { won: number; lost: number } {
-  const parseCellInt = (index: number): number | null => {
-    const value = Number.parseInt(normalizeWhitespace(cells.eq(index).text()), 10);
-    return Number.isNaN(value) ? null : value;
-  };
+/** DMBB awards 3 standings points per win and 1 per loss. */
+function deriveWinsLossesFromPoints(played: number, points: number): { won: number; lost: number } | null {
+  if (played < 0 || points < 0) return null;
 
-  // Most DMBB league rows place W/L immediately after P.
-  const wonCandidate = parseCellInt(3);
-  const lostCandidate = parseCellInt(4);
-  if (
-    wonCandidate != null &&
-    lostCandidate != null &&
-    wonCandidate >= 0 &&
-    lostCandidate >= 0 &&
-    wonCandidate + lostCandidate <= played
-  ) {
-    return { won: wonCandidate, lost: lostCandidate };
-  }
+  const wonNumerator = points - played;
+  if (wonNumerator < 0 || wonNumerator % 2 !== 0) return null;
 
-  // Fallback: use numeric cells and prefer pairs that sum to played.
-  const numericValues = cells
-    .map((_, cell) => Number.parseInt(normalizeWhitespace($(cell).text()), 10))
-    .get()
-    .filter((value) => !Number.isNaN(value) && value >= 0);
+  const won = wonNumerator / 2;
+  const lost = played - won;
+  if (won < 0 || lost < 0 || won + lost !== played) return null;
+  if (3 * won + lost !== points) return null;
 
-  for (let i = 0; i < numericValues.length; i += 1) {
-    for (let j = 0; j < numericValues.length; j += 1) {
-      if (i === j) continue;
-      const won = numericValues[i];
-      const lost = numericValues[j];
-      if (won + lost === played) return { won, lost };
-    }
-  }
-
-  return { won: 0, lost: 0 };
+  return { won, lost };
 }
 
 function parseCompetitionsFromClubPage($: cheerio.CheerioAPI): {
@@ -363,10 +338,26 @@ function parseCompetitionsFromClubPage($: cheerio.CheerioAPI): {
 
   $("table").each((_, tableElement) => {
     const table = $(tableElement);
+    const headerCells = table.find("thead th");
+    const headerMap = new Map<string, number>();
+    headerCells.each((index, headerCell) => {
+      const normalized = normalizeWhitespace($(headerCell).text()).toLowerCase();
+      if (normalized) headerMap.set(normalized, index);
+    });
+
+    const playedIndex =
+      headerMap.get("p") ??
+      headerMap.get("pld") ??
+      headerMap.get("played") ??
+      2;
+    const pointsIndex =
+      headerMap.get("pts") ??
+      headerMap.get("points");
+
     const rows = table.find("tbody tr");
     if (!rows.length) return;
 
-    rows.each((__, rowElement) => {
+    rows.each((_, rowElement) => {
       const row = $(rowElement);
       const teamLink = row.find("a[href*='fixtures.aspx'][href*='compId=']").first();
       const href = teamLink.attr("href") ?? "";
@@ -378,21 +369,22 @@ function parseCompetitionsFromClubPage($: cheerio.CheerioAPI): {
       if (cells.length < 4) return;
 
       const team = normalizeWhitespace(teamLink.text());
-      const played = Number.parseInt(normalizeWhitespace($(cells.get(2)).text()), 10);
-      const { won, lost } = inferWonLostFromRow($, cells, played);
-      const points = Number.parseInt(
-        normalizeWhitespace($(cells.get(cells.length - 1)).text()),
-        10,
-      );
+      const playedCell = cells.get(playedIndex) ?? cells.get(2);
+      const played = Number.parseInt(normalizeWhitespace($(playedCell).text()), 10);
+      const pointsCell = pointsIndex != null ? cells.get(pointsIndex) : cells.get(cells.length - 1);
+      const points = Number.parseInt(normalizeWhitespace($(pointsCell).text()), 10);
 
       if (!team || Number.isNaN(played) || Number.isNaN(points)) return;
+
+      const record = deriveWinsLossesFromPoints(played, points);
+      if (!record) return;
 
       standingsRows.push({
         competitionId,
         team,
         played,
-        won,
-        lost,
+        won: record.won,
+        lost: record.lost,
         points,
       });
     });
@@ -494,7 +486,7 @@ async function getOfficialDmbbDataInternal(): Promise<DmbbPayload> {
   const [homeHtml, rulesHtml] = await Promise.all([fetchHtml("/homepage.aspx?oid=1006"), fetchHtml("/homepage.aspx?oid=1006&ct=rules")]);
 
   if (!homeHtml) {
-    return dmbbPayloadSchema.parse({ ...fallbackPayload, lastSyncedAt: new Date().toISOString() });
+    throw new Error("Unable to fetch DMBB homepage");
   }
 
   const homeDoc = cheerio.load(homeHtml);
@@ -532,7 +524,6 @@ async function getOfficialDmbbDataInternal(): Promise<DmbbPayload> {
       }
     }
   }
-
   const news = parseNews(homeDoc);
   const rulesNews = rulesDoc ? parseNews(rulesDoc) : [];
 
@@ -608,12 +599,42 @@ async function getOfficialDmbbDataInternal(): Promise<DmbbPayload> {
   return dmbbPayloadSchema.parse(payload);
 }
 
+const getOfficialDmbbDataCached = unstable_cache(getOfficialDmbbDataInternal, ["official-dmbb-data"], {
+  revalidate: 900,
+  tags: ["official-dmbb"],
+});
+
+function isFallbackLikePayload(payload: DmbbPayload): boolean {
+  if (payload.competitions.length !== fallbackPayload.competitions.length) return false;
+  const payloadIds = payload.competitions.map((competition) => competition.id).sort().join("|");
+  const fallbackIds = fallbackPayload.competitions.map((competition) => competition.id).sort().join("|");
+  return payloadIds === fallbackIds;
+}
+
 export async function getOfficialDmbbData(): Promise<DmbbPayload> {
   const now = Date.now();
   if (cachedPayload && now - cachedAt < CACHE_TTL_MS) return cachedPayload;
   if (inFlightPayload) return inFlightPayload;
 
-  inFlightPayload = getOfficialDmbbDataInternal()
+  inFlightPayload = getOfficialDmbbDataCached()
+    .then(async (payload) => {
+      if (isFallbackLikePayload(payload)) {
+        revalidateTag("official-dmbb");
+        return getOfficialDmbbDataInternal();
+      }
+      return payload;
+    })
+    .catch(async () => {
+      try {
+        return await getOfficialDmbbDataInternal();
+      } catch {
+        if (cachedPayload) return cachedPayload;
+        return dmbbPayloadSchema.parse({
+          ...fallbackPayload,
+          lastSyncedAt: new Date().toISOString(),
+        });
+      }
+    })
     .then((payload) => {
       cachedPayload = payload;
       cachedAt = Date.now();
@@ -629,5 +650,6 @@ export async function getOfficialDmbbData(): Promise<DmbbPayload> {
 export async function syncDmbbData(): Promise<DmbbPayload> {
   cachedPayload = null;
   cachedAt = 0;
+  revalidateTag("official-dmbb");
   return getOfficialDmbbData();
 }

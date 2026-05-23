@@ -1,4 +1,5 @@
 import { createClient } from "@sanity/client";
+import { unstable_cache } from "next/cache";
 
 const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "";
 const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET ?? "production";
@@ -31,3 +32,8 @@ export async function getHeroContent(): Promise<HeroContent | null> {
   }`;
   return sanityClient.fetch<HeroContent | null>(query);
 }
+
+export const getHeroContentCached = unstable_cache(getHeroContent, ["hero-content"], {
+  revalidate: 900,
+  tags: ["hero-content"],
+});

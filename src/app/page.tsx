@@ -5,11 +5,11 @@ import {
   ResultCard,
   SectionTitle,
 } from "@/components/site-shell";
-import { getHeroContent } from "@/lib/cms/sanity";
+import { getHeroContentCached } from "@/lib/cms/sanity";
 import { getOfficialDmbbData } from "@/lib/data/official-dmbb";
 
 export default async function Home() {
-  const [data, heroContent] = await Promise.all([getOfficialDmbbData(), getHeroContent()]);
+  const [data, heroContent] = await Promise.all([getOfficialDmbbData(), getHeroContentCached()]);
   return (
     <>
       <Hero
